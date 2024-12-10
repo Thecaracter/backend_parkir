@@ -12,8 +12,8 @@ return new class extends Migration {
     {
         Schema::create('konfirmasi', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained('users');
-            $table->foreignId('informasi_id')->constrained('informasi');
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('informasi_id')->constrained('informasi')->onDelete('cascade');
             $table->timestamps();
         });
     }

@@ -57,7 +57,8 @@ class ApiInformasiController extends Controller
         try {
             $validator = Validator::make($request->all(), [
                 'jenis_kendaraan' => 'required|in:motor,mobil',
-                'area' => 'required|in:A,B,C,D,E,F,G'
+                'area' => 'required|in:A,B,C,D,E,F,G',
+                'user_id' => 'required|exists:users,id'  // Tambah validasi user_id
             ]);
 
             if ($validator->fails()) {
@@ -69,9 +70,19 @@ class ApiInformasiController extends Controller
             $informasi = Informasi::where('jenis_kendaraan', $request->jenis_kendaraan)
                 ->where('area', $request->area)
                 ->where('created_at', '>=', $oneHourAgo)
+                ->withCount([
+                    'konfirmasi' => function ($query) use ($request) {
+                        $query->where('user_id', $request->user_id);
+                    }
+                ])
                 ->orderBy('poin', 'desc')
                 ->orderBy('created_at', 'desc')
-                ->get();
+                ->get()
+                ->map(function ($item) {
+                    $item->is_confirmed = $item->konfirmasi_count > 0;
+                    unset($item->konfirmasi_count);
+                    return $item;
+                });
 
             if ($informasi->isEmpty()) {
                 return $this->okResponse(null, 'Tidak ada data dalam 1 jam terakhir');
