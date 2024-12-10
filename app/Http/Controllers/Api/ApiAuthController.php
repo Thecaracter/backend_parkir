@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
 
 class ApiAuthController extends Controller
 {
@@ -100,40 +101,51 @@ class ApiAuthController extends Controller
     public function updateProfile(Request $request)
     {
         try {
-            $request->validate([
-                'user_id' => 'required|numeric',
-                'name' => 'required|string|max:255',
-                'email' => 'required|string|email|max:255'
+            // Validasi input
+            $validated = $request->validate([
+                'id' => 'required|numeric|exists:users,id',
+                'name' => 'nullable|string|max:255',
+                'email' => [
+                    'nullable',
+                    'string',
+                    'email',
+                    'max:255',
+                    function ($attribute, $value, $fail) use ($request) {
+                        if ($value) {
+                            $exists = User::where('email', $value)
+                                ->where('id', '!=', $request->id)
+                                ->exists();
+
+                            if ($exists) {
+                                $fail('Email sudah digunakan.');
+                            }
+                        }
+                    }
+                ]
             ]);
 
-            $user = User::find($request->user_id);
+            $user = User::find($request->id);
 
-            if (!$user) {
-                return $this->notFoundResponse('User tidak ditemukan');
-            }
-
-            $existingUser = User::where('email', $request->email)
-                ->where('id', '!=', $request->user_id)
-                ->first();
-
-            if ($existingUser) {
-                return $this->badRequestResponse('Email sudah digunakan');
-            }
-
-            $user->update([
+            // Filter data yang akan diupdate
+            $updateData = array_filter([
                 'name' => $request->name,
-                'email' => $request->email,
-            ]);
+                'email' => $request->email
+            ], function ($value) {
+                return !is_null($value);
+            });
 
-            $userData = [
+            // Update data
+            $user->update($updateData);
+
+            return $this->okResponse([
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
                 'poin' => $user->poin
-            ];
+            ], 'Profile berhasil diupdate');
 
-            return $this->okResponse($userData, 'Profile berhasil diupdate');
-
+        } catch (ValidationException $e) {
+            return $this->validationErrorResponse($e->getMessage());
         } catch (\Exception $e) {
             return $this->serverErrorResponse($e->getMessage());
         }
