@@ -23,7 +23,7 @@ class ApiInformasiController extends Controller
             'area' => 'required|in:A,B,C,D,E,F,G',
             'user_id' => 'required|exists:users,id',
             'kapasitas' => 'required|integer',
-            'foto' => 'required|image|mimes:jpeg,png,jpg|max:2048',
+            'foto' => 'required|image|mimes:jpeg,png,jpg',
             'poin' => 'nullable|integer'
         ]);
 
