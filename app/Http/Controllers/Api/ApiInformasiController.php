@@ -7,7 +7,10 @@ use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Traits\ApiResponse;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use App\Http\Controllers\Api\ApiMisiController;
 
 class ApiInformasiController extends Controller
 {
@@ -28,14 +31,25 @@ class ApiInformasiController extends Controller
             return $this->validationErrorResponse($validator->errors()->first());
         }
 
+        DB::beginTransaction();
         try {
+            // Handle file upload
             $foto = $request->file('foto');
-
             $uniqueDigits = str_pad(mt_rand(1, 99999), 5, '0', STR_PAD_LEFT);
             $fotoName = date('Ymd') . '_' . $uniqueDigits . '.' . $foto->extension();
 
-            $foto->move(public_path('parkir'), $fotoName);
+            // Cek dan buat direktori jika belum ada
+            $uploadPath = public_path('parkir');
+            if (!file_exists($uploadPath)) {
+                mkdir($uploadPath, 0777, true);
+            }
 
+            // Upload file
+            if (!$foto->move($uploadPath, $fotoName)) {
+                throw new \Exception('Gagal mengupload file');
+            }
+
+            // Create record
             $informasi = Informasi::create([
                 'jenis_kendaraan' => $request->jenis_kendaraan,
                 'area' => $request->area,
@@ -45,10 +59,30 @@ class ApiInformasiController extends Controller
                 'poin' => $request->poin ?? 0
             ]);
 
+            // Update misi
+            $misiController = new ApiMisiController();
+            if (!$misiController->updateProgress($request->user_id)) {
+                throw new \Exception('Gagal memperbarui progress misi');
+            }
+
+            DB::commit();
             return $this->createdResponse($informasi, 'Data berhasil ditambahkan');
 
         } catch (\Exception $e) {
-            return $this->serverErrorResponse('Terjadi kesalahan saat menyimpan data');
+            DB::rollBack();
+
+            // Delete uploaded file if exists
+            if (isset($fotoName)) {
+                $fotoPath = public_path('parkir/' . $fotoName);
+                if (file_exists($fotoPath)) {
+                    unlink($fotoPath);
+                }
+            }
+
+            Log::error('Store Informasi Error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+
+            return $this->serverErrorResponse('Terjadi kesalahan saat menyimpan data: ' . $e->getMessage());
         }
     }
 
@@ -58,7 +92,7 @@ class ApiInformasiController extends Controller
             $validator = Validator::make($request->all(), [
                 'jenis_kendaraan' => 'required|in:motor,mobil',
                 'area' => 'required|in:A,B,C,D,E,F,G',
-                'user_id' => 'required|exists:users,id'  // Tambah validasi user_id
+                'user_id' => 'required|exists:users,id'
             ]);
 
             if ($validator->fails()) {
@@ -67,7 +101,8 @@ class ApiInformasiController extends Controller
 
             $oneHourAgo = Carbon::now()->subHour();
 
-            $informasi = Informasi::where('jenis_kendaraan', $request->jenis_kendaraan)
+            $informasi = Informasi::with(['user:id,name'])
+                ->where('jenis_kendaraan', $request->jenis_kendaraan)
                 ->where('area', $request->area)
                 ->where('created_at', '>=', $oneHourAgo)
                 ->withCount([
@@ -91,6 +126,9 @@ class ApiInformasiController extends Controller
             return $this->okResponse($informasi, 'Data berhasil diambil');
 
         } catch (\Exception $e) {
+            Log::error('Index Informasi Error: ' . $e->getMessage());
+            Log::error('Stack trace: ' . $e->getTraceAsString());
+
             return $this->serverErrorResponse('Terjadi kesalahan saat mengambil data');
         }
     }
