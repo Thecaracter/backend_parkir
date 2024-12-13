@@ -14,8 +14,11 @@ class ApiBerandaController extends Controller
     public function getLatestConfirmed()
     {
         try {
+            $oneHourAgo = Carbon::now()->subHour();
+
             $latestData = Informasi::with(['user:id,name', 'konfirmasi'])
                 ->select('id', 'jenis_kendaraan', 'area', 'user_id', 'kapasitas', 'foto', 'poin', 'created_at')
+                ->where('created_at', '>=', $oneHourAgo)
                 ->orderBy('created_at', 'desc')
                 ->take(3)
                 ->get()
@@ -34,7 +37,7 @@ class ApiBerandaController extends Controller
                 });
 
             if ($latestData->isEmpty()) {
-                return $this->okResponse(null, 'Belum ada data');
+                return $this->okResponse(null, 'Belum ada data dalam satu jam terakhir');
             }
 
             return $this->okResponse($latestData, 'Data berhasil diambil');
